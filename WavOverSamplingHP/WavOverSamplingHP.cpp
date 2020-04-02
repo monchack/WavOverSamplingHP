@@ -8,8 +8,9 @@
 #include <boost/multiprecision/cpp_dec_float.hpp>
 
 // Tap size; change this number if necessary. Must be an odd number
-#define TAP_SIZE 4095
-//#define TAP_SIZE 524287
+//#define TAP_SIZE 4095
+#define TAP_SIZE 524287
+//#define TAP_SIZE 65535
 
 #define HIGH_PRECISION 1
 
@@ -99,7 +100,6 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 {
 	int half_size = (tapNum - 1) / 2;
 
-
 	long long tmpLeft, tmpRight;
 
 	__m128d tmpLeft2;
@@ -108,8 +108,8 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
-		short *srcLeft = src;
-		short *srcRight = src + 1;
+		//short *srcLeft = src;
+		//short *srcRight = src + 1;
 
 		// 2nd 
 		tmpLeft = 0;
@@ -122,12 +122,15 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 
 		for (int j = 1; (j * 8 - x8pos) <= half_size; ++j)
 		{
-			tmpLeft += (long long)*(srcLeft + j * 2) * coeff[half_size + j * 8 - x8pos];
-			tmpRight += (long long)*(srcRight + j * 2) *coeff[half_size + j * 8 - x8pos];
+			long long srcLeft = (long long)*(src + j * 2);
+			long long srcRight = (long long)*(src + j * 2 + 1);
+			
+			tmpLeft += srcLeft * coeff[half_size + j * 8 - x8pos];
+			tmpRight += srcRight * coeff[half_size + j * 8 - x8pos];
 
 			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, *(srcLeft + j * 2)); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, *(srcRight + j * 2));
+			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight);
 			z = _mm_load_sd(coeff2 + (half_size + j * 8 - x8pos)); // load "double"
 			tmpLeft2 = _mm_fmadd_pd(x, z, tmpLeft2); // a = a x b + c
 			tmpRight2 = _mm_fmadd_pd(y, z, tmpRight2);
@@ -136,13 +139,19 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 
 		for (int j = 0; (j * 8 + x8pos) <= half_size; ++j)
 		{
-			tmpLeft += (long long)*(srcLeft - j * 2) * coeff[half_size - j * 8 - x8pos];
-			tmpRight += (long long)*(srcRight - j * 2) * coeff[half_size - j * 8 - x8pos];
+			long long srcLeft = (long long)*(src - j * 2);
+			long long srcRight = (long long)*(src - j * 2 + 1);
+
+			//tmpLeft += (long long)*(srcLeft - j * 2) * coeff[half_size - j * 8 - x8pos];
+			//tmpRight += (long long)*(srcRight - j * 2) * coeff[half_size - j * 8 - x8pos];
+			tmpLeft += srcLeft * coeff[half_size + j * 8 + x8pos];
+			tmpRight += srcRight * coeff[half_size + j * 8 + x8pos];
 
 			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, *(srcLeft - j * 2)); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, *(srcRight - j * 2));
-			z = _mm_load_sd(coeff2 + (half_size - j * 8 - x8pos)); // load "double"
+			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight);
+			//z = _mm_load_sd(coeff2 + (half_size - j * 8 - x8pos)); // load "double"
+			z = _mm_load_sd(coeff2 + (half_size + j * 8 + x8pos)); // load "double"
 			tmpLeft2 = _mm_fmadd_pd(x, z, tmpLeft2); // a = a x b + c
 			tmpRight2 = _mm_fmadd_pd(y, z, tmpRight2);
 			#endif
@@ -379,6 +388,8 @@ static int writePCM352_32_header(HANDLE fileHandle, unsigned long dataSize)
 	return 0;
 }
 
+
+
 int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 {
 	DWORD wavDataOffset, wavDataSize, writtenSize, length, readSize = 0;
@@ -391,7 +402,7 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	destFileName = argv[2];
 
 	ULONGLONG startTime = GetTickCount64();
-	ULONGLONG elapsedTime;
+	ULONGLONG elapsedTime, calcStartTime;
 
 	if (!searchFmtDataChunk(fileName, &wf, &wavDataOffset, &wavDataSize))
 	{
@@ -413,7 +424,10 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	double* firCoeff2 = (double*)::GlobalAlloc(GPTR, sizeof(double) * TAP_SIZE);
 	createHannCoeff(TAP_SIZE, firCoeff, firCoeff2);
 	elapsedTime = GetTickCount64() - startTime;
+	calcStartTime = GetTickCount64();
 	std::cout << "WavOverSampling: Initialization finished:  " << (elapsedTime / 1000) << "." << (elapsedTime % 1000) << " sec  \n";
+
+	float total = 0.0f;
 
 	for (int i = 0; i <= part; ++i)
 	{
@@ -444,9 +458,11 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 			thread[j] = CreateThread(NULL, 0, ThreadFunc, (LPVOID)&info[j], 0, &threadId[j]);
 		}
 		::WaitForMultipleObjects(8, thread, TRUE, INFINITE);
-		
+	
 		::WriteFile(fileOut, memOut, length * 8 * 2, &writtenSize, NULL);
-		std::cout << "WavOverSampling: Progress  " << (i * 100) / part << " %\r";
+
+		total += (DATA_UNIT_SIZE / 4) * 1000;
+		std::cout << "WavOverSampling: Progress  " << (i * 100) / part << "%    " << (total / 44100 / (GetTickCount64() - calcStartTime)) <<  "x\r";
 	}
 	elapsedTime = GetTickCount64() - startTime;
 	std::cout << "\nWavOverSampling: Completed.   " << (elapsedTime/1000) << "." << (elapsedTime % 1000) <<  " sec  \n";
