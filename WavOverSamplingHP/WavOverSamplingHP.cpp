@@ -9,13 +9,13 @@
 
 // Tap size; change this number if necessary. Must be an odd number
 //#define TAP_SIZE 4095
-#define TAP_SIZE 524287
-//#define TAP_SIZE 65535
+//#define TAP_SIZE 524287
+#define TAP_SIZE 65535
 
 #define HIGH_PRECISION 1
 
 
-#define DATA_UNIT_SIZE (1024 * 1024)
+#define DATA_UNIT_SIZE (1024 * 512)
 
 // 16(15+1)bit  X  scale: 48(47+1)bit =  63(62+1)bit -> 32bit (31bit shift)
 #define COEFF_SCALE 47
@@ -96,7 +96,9 @@ static void writeRaw32bitPCM(long long left, long long right, int* buffer)
 	buffer[1] = (int)right;
 }
 
-int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
+
+
+int do_oversample(short* src, double* src2, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
 {
 	int half_size = (tapNum - 1) / 2;
 
@@ -104,16 +106,16 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 
 	__m128d tmpLeft2;
 	__m128d tmpRight2;
-	__m128d x, y, z;
+	__m128d x, y;
+	__declspec(align(32)) long long tmpLR[4];
+
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
-		//short *srcLeft = src;
-		//short *srcRight = src + 1;
-
-		// 2nd 
 		tmpLeft = 0;
 		tmpRight = 0;
+		tmpLR[0] = 0;
+		tmpLR[1] = 0;
 		tmpLeft2 = _mm_setzero_pd();
 		tmpRight2 = _mm_setzero_pd();
 
@@ -124,16 +126,18 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 		{
 			long long srcLeft = (long long)*(src + j * 2);
 			long long srcRight = (long long)*(src + j * 2 + 1);
+			int coeffPos = half_size + j * 8 - x8pos;
 			
-			tmpLeft += srcLeft * coeff[half_size + j * 8 - x8pos];
-			tmpRight += srcRight * coeff[half_size + j * 8 - x8pos];
+			tmpLR[0] += srcLeft * coeff[coeffPos];
+			tmpLR[1] += srcRight * coeff[coeffPos];
 
 			#if defined(HIGH_PRECISION)
 			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
 			y = _mm_cvtsi64_sd(y, srcRight);
-			z = _mm_load_sd(coeff2 + (half_size + j * 8 - x8pos)); // load "double"
-			tmpLeft2 = _mm_fmadd_pd(x, z, tmpLeft2); // a = a x b + c
-			tmpRight2 = _mm_fmadd_pd(y, z, tmpRight2);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2 + coeffPos));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2 + coeffPos));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
 			#endif
 		}
 
@@ -141,28 +145,27 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 		{
 			long long srcLeft = (long long)*(src - j * 2);
 			long long srcRight = (long long)*(src - j * 2 + 1);
+			int coeffPos = half_size + j * 8 + x8pos; // half_size - j * 8 - x8pos
 
-			//tmpLeft += (long long)*(srcLeft - j * 2) * coeff[half_size - j * 8 - x8pos];
-			//tmpRight += (long long)*(srcRight - j * 2) * coeff[half_size - j * 8 - x8pos];
-			tmpLeft += srcLeft * coeff[half_size + j * 8 + x8pos];
-			tmpRight += srcRight * coeff[half_size + j * 8 + x8pos];
+			tmpLR[0] += srcLeft * coeff[coeffPos];
+			tmpLR[1] += srcRight * coeff[coeffPos];
 
 			#if defined(HIGH_PRECISION)
 			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
 			y = _mm_cvtsi64_sd(y, srcRight);
-			//z = _mm_load_sd(coeff2 + (half_size - j * 8 - x8pos)); // load "double"
-			z = _mm_load_sd(coeff2 + (half_size + j * 8 + x8pos)); // load "double"
-			tmpLeft2 = _mm_fmadd_pd(x, z, tmpLeft2); // a = a x b + c
-			tmpRight2 = _mm_fmadd_pd(y, z, tmpRight2);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2 + coeffPos));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2 + coeffPos));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
 			#endif
 		}
 
 		#if defined(HIGH_PRECISION)
-		tmpLeft += _mm_cvtsd_si64(tmpLeft2); // get "long long" from double
-		tmpRight += _mm_cvtsd_si64(tmpRight2);
+		tmpLR[0] += _mm_cvtsd_si64(tmpLeft2); // get "long long" from double
+		tmpLR[1] += _mm_cvtsd_si64(tmpRight2);
 		#endif
 
-		writeRaw32bitPCM(tmpLeft, tmpRight, dest + x8pos*2);
+		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos*2);
 
 		src += 2;
 		dest += 8 * 2;
@@ -170,7 +173,7 @@ int do_oversample(short* src, unsigned int length, long long* coeff, double* coe
 	return 0;
 }
 
-int  oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, unsigned int option)
+int  oversample(short* src, double* src2, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, unsigned int option)
 {
 	if (option == 0)
 	{
@@ -192,7 +195,7 @@ int  oversample(short* src, unsigned int length, long long* coeff, double* coeff
 	}
 	else
 	{
-		do_oversample(src, length, coeff, coeff2, tapNum, dest, option);
+		do_oversample(src, src2,  length, coeff, coeff2, tapNum, dest, option);
 	}
 	return 0;
 }
@@ -201,6 +204,7 @@ int  oversample(short* src, unsigned int length, long long* coeff, double* coeff
 struct oversample_info
 {
 	short* src;
+	double* src2;
 	unsigned int length;
 	long long* coeff;
 	double* coeff2;
@@ -212,7 +216,7 @@ struct oversample_info
 DWORD WINAPI ThreadFunc(LPVOID arg)
 {
 	struct oversample_info* info = (struct oversample_info*)arg;
-	oversample(info->src, info->length, info->coeff, info->coeff2, info->tapNum, info->dest, info->option);
+	oversample(info->src, info->src2, info->length, info->coeff, info->coeff2, info->tapNum, info->dest, info->option);
 	return 0;
 }
 
@@ -388,7 +392,13 @@ static int writePCM352_32_header(HANDLE fileHandle, unsigned long dataSize)
 	return 0;
 }
 
-
+void* getAlignedMemory(void* mem)
+{
+	long long n = (long long)mem;
+	n = n % 16;
+	if (n != 0) n = 16 - n;
+	return (void*)((unsigned char*)mem + n);
+}
 
 int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 {
@@ -411,17 +421,26 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	int part = wavDataSize / DATA_UNIT_SIZE;
 	if ((wavDataSize %  DATA_UNIT_SIZE) != 0) part += 1;
 
-	void* mem1 = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 3);
+	void* memWorkBuffer = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 3 + 1024);
+	void* mem1 = getAlignedMemory(memWorkBuffer);
 	void* mem2 = (char*)mem1 + DATA_UNIT_SIZE;
 	void* mem3 = (char*)mem2 + DATA_UNIT_SIZE;
+	void* memWorkBufferDouble = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 4 * 3 + 1024);
+	void* memDouble1 = getAlignedMemory(memWorkBufferDouble);
+	void* memDouble2 = (char*)memDouble1 + DATA_UNIT_SIZE * 4;
+	void* memDouble3 = (char*)memDouble2 + DATA_UNIT_SIZE * 4;
 
-	void* memOut = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 8 * 2);
+	void* memOriginalOutBufer = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 8 * 2 + 1024);
+	void* memOut = getAlignedMemory(memOriginalOutBufer);
 
 	HANDLE fileOut = CreateFileW(destFileName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS /*CREATE_NEW*/, FILE_ATTRIBUTE_NORMAL, NULL);
 	writePCM352_32_header(fileOut, wavDataSize * 8 * 2);
 
-	long long* firCoeff = (long long*)::GlobalAlloc(GPTR, sizeof(long long) * TAP_SIZE);
-	double* firCoeff2 = (double*)::GlobalAlloc(GPTR, sizeof(double) * TAP_SIZE);
+	void* memFirCoeff1 = ::GlobalAlloc(GPTR, sizeof(long long) * TAP_SIZE + 1024);
+	long long* firCoeff = (long long* )getAlignedMemory(memFirCoeff1);
+	void* memFirCoeff2 = ::GlobalAlloc(GPTR, sizeof(double) * TAP_SIZE + 1024);
+	double* firCoeff2 = (double*)getAlignedMemory(memFirCoeff2);
+
 	createHannCoeff(TAP_SIZE, firCoeff, firCoeff2);
 	elapsedTime = GetTickCount64() - startTime;
 	calcStartTime = GetTickCount64();
@@ -437,11 +456,15 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		::CopyMemory(mem1, mem2, DATA_UNIT_SIZE);
 		::CopyMemory(mem2, mem3, DATA_UNIT_SIZE);
 		::SecureZeroMemory(mem3, DATA_UNIT_SIZE);
-		if (i != part) readSize = readWavFile(fileName, mem3, DATA_UNIT_SIZE * i, DATA_UNIT_SIZE);
+		if (i != part)
+		{
+			readSize = readWavFile(fileName, mem3, DATA_UNIT_SIZE * i, DATA_UNIT_SIZE);
+		}
 		if (i == 0) continue;
 	
 		struct oversample_info info[8];
 		info[0].src = (short* )mem2;
+		info[0].src2 = (double*)memDouble2;
 		info[0].length = length / 4;
 		info[0].coeff = firCoeff;
 		info[0].coeff2 = firCoeff2;
@@ -470,9 +493,10 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	::FlushFileBuffers(fileOut);
 	::CloseHandle(fileOut);
 
-	::GlobalFree(mem1);
-	::GlobalFree(memOut);
-	::GlobalFree(firCoeff);
-	::GlobalFree(firCoeff2);
+	::GlobalFree(memWorkBuffer);
+	::GlobalFree(memWorkBufferDouble);
+	::GlobalFree(memOriginalOutBufer);
+	::GlobalFree(memFirCoeff1);
+	::GlobalFree(memFirCoeff2);
 	return 0;
 }
