@@ -122,42 +122,56 @@ int do_oversample(short* src, double* src2, unsigned int length, long long* coef
 		x = _mm_setzero_pd();
 		y = _mm_setzero_pd();
 
+		short* srcPtr = src + 2;
+		long long* coeffPtr = coeff + half_size - x8pos + 8;
+		double* coeff2Ptr = coeff2 + half_size - x8pos + 8;
+
 		for (int j = 1; (j * 8 - x8pos) <= half_size; ++j)
 		{
-			long long srcLeft = (long long)*(src + j * 2);
-			long long srcRight = (long long)*(src + j * 2 + 1);
-			int coeffPos = half_size + j * 8 - x8pos;
+			long long srcLeft = (long long)*srcPtr;
+			long long srcRight = (long long)*(srcPtr + 1);
 			
-			tmpLR[0] += srcLeft * coeff[coeffPos];
-			tmpLR[1] += srcRight * coeff[coeffPos];
+			tmpLR[0] += srcLeft * *coeffPtr;
+			tmpLR[1] += srcRight * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
 			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
 			y = _mm_cvtsi64_sd(y, srcRight);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2 + coeffPos));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2 + coeffPos));
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
 			tmpRight2 = _mm_add_sd(tmpLeft2, y);
 			#endif
+
+			srcPtr += 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
 		}
+
+		srcPtr = src;
+		coeffPtr = coeff + half_size + x8pos;
+		coeff2Ptr = coeff2 + half_size + x8pos;
 
 		for (int j = 0; (j * 8 + x8pos) <= half_size; ++j)
 		{
-			long long srcLeft = (long long)*(src - j * 2);
-			long long srcRight = (long long)*(src - j * 2 + 1);
-			int coeffPos = half_size + j * 8 + x8pos; // half_size - j * 8 - x8pos
+			long long srcLeft = (long long)*srcPtr;
+			long long srcRight = (long long)*(srcPtr + 1);
 
-			tmpLR[0] += srcLeft * coeff[coeffPos];
-			tmpLR[1] += srcRight * coeff[coeffPos];
+			tmpLR[0] += srcLeft * *coeffPtr;
+			tmpLR[1] += srcRight * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
 			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
 			y = _mm_cvtsi64_sd(y, srcRight);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2 + coeffPos));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2 + coeffPos));
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
 			tmpRight2 = _mm_add_sd(tmpLeft2, y);
 			#endif
+
+			srcPtr -= 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
 		}
 
 		#if defined(HIGH_PRECISION)
