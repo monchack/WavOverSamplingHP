@@ -12,7 +12,7 @@
 //#define TAP_SIZE 524287
 #define TAP_SIZE 65535
 
-//#define HIGH_PRECISION 1
+#define HIGH_PRECISION 1
 
 
 #define DATA_UNIT_SIZE (1024 * 512)
