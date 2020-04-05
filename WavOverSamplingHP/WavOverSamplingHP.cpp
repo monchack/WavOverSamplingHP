@@ -12,7 +12,7 @@
 //#define TAP_SIZE 524287
 #define TAP_SIZE 65535
 
-#define HIGH_PRECISION 1
+//#define HIGH_PRECISION 1
 
 
 #define DATA_UNIT_SIZE (1024 * 512)
@@ -89,6 +89,7 @@ static void writeRaw32bitPCM(long long left, long long right, int* buffer)
 	if (left < -4611686018427387904) left = -4611686018427387904;
 	if (right < -4611686018427387904) right = -4611686018427387904;
 
+
 	left = left >> shift;
 	right = right >> shift;
 
@@ -98,7 +99,7 @@ static void writeRaw32bitPCM(long long left, long long right, int* buffer)
 
 
 
-int do_oversample(short* src, double* src2, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
+int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
 {
 	int half_size = (tapNum - 1) / 2;
 
@@ -187,7 +188,7 @@ int do_oversample(short* src, double* src2, unsigned int length, long long* coef
 	return 0;
 }
 
-int  oversample(short* src, double* src2, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, unsigned int option)
+int  oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, unsigned int option)
 {
 	if (option == 0)
 	{
@@ -209,7 +210,7 @@ int  oversample(short* src, double* src2, unsigned int length, long long* coeff,
 	}
 	else
 	{
-		do_oversample(src, src2,  length, coeff, coeff2, tapNum, dest, option);
+		do_oversample(src,  length, coeff, coeff2, tapNum, dest, option);
 	}
 	return 0;
 }
@@ -218,7 +219,6 @@ int  oversample(short* src, double* src2, unsigned int length, long long* coeff,
 struct oversample_info
 {
 	short* src;
-	double* src2;
 	unsigned int length;
 	long long* coeff;
 	double* coeff2;
@@ -230,7 +230,7 @@ struct oversample_info
 DWORD WINAPI ThreadFunc(LPVOID arg)
 {
 	struct oversample_info* info = (struct oversample_info*)arg;
-	oversample(info->src, info->src2, info->length, info->coeff, info->coeff2, info->tapNum, info->dest, info->option);
+	oversample(info->src, info->length, info->coeff, info->coeff2, info->tapNum, info->dest, info->option);
 	return 0;
 }
 
@@ -439,10 +439,6 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	void* mem1 = getAlignedMemory(memWorkBuffer);
 	void* mem2 = (char*)mem1 + DATA_UNIT_SIZE;
 	void* mem3 = (char*)mem2 + DATA_UNIT_SIZE;
-	void* memWorkBufferDouble = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 4 * 3 + 1024);
-	void* memDouble1 = getAlignedMemory(memWorkBufferDouble);
-	void* memDouble2 = (char*)memDouble1 + DATA_UNIT_SIZE * 4;
-	void* memDouble3 = (char*)memDouble2 + DATA_UNIT_SIZE * 4;
 
 	void* memOriginalOutBufer = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 8 * 2 + 1024);
 	void* memOut = getAlignedMemory(memOriginalOutBufer);
@@ -478,7 +474,6 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	
 		struct oversample_info info[8];
 		info[0].src = (short* )mem2;
-		info[0].src2 = (double*)memDouble2;
 		info[0].length = length / 4;
 		info[0].coeff = firCoeff;
 		info[0].coeff2 = firCoeff2;
@@ -499,7 +494,8 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		::WriteFile(fileOut, memOut, length * 8 * 2, &writtenSize, NULL);
 
 		total += (DATA_UNIT_SIZE / 4) * 1000;
-		std::cout << "WavOverSampling: Progress  " << (i * 100) / part << "%    " << (total / 44100 / (GetTickCount64() - calcStartTime)) <<  "x\r";
+		elapsedTime = GetTickCount64() - startTime;
+		std::cout << "WavOverSampling: Progress  " << (i * 100) / part << "%    " << (total / 44100 / (GetTickCount64() - calcStartTime)) <<  "x    " << (elapsedTime/1000/60) << " min " << (elapsedTime /1000)%60 << " sec  \r";
 	}
 	elapsedTime = GetTickCount64() - startTime;
 	std::cout << "\nWavOverSampling: Completed.   " << (elapsedTime/1000) << "." << (elapsedTime % 1000) <<  " sec  \n";
@@ -508,7 +504,6 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	::CloseHandle(fileOut);
 
 	::GlobalFree(memWorkBuffer);
-	::GlobalFree(memWorkBufferDouble);
 	::GlobalFree(memOriginalOutBufer);
 	::GlobalFree(memFirCoeff1);
 	::GlobalFree(memFirCoeff2);
