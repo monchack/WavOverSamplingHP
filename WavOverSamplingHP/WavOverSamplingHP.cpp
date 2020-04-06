@@ -97,9 +97,90 @@ static void writeRaw32bitPCM(long long left, long long right, int* buffer)
 	buffer[1] = (int)right;
 }
 
+int do_oversampleAVX(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
+{
+	int half_size = (tapNum - 1) / 2;
+
+	long long tmpLeft, tmpRight;
+
+	__m128d tmpLeft2;
+	__m128d tmpRight2;
+	__m128d x, y;
+	__declspec(align(32)) long long tmpLR[4];
+	__declspec(align(32)) long long srcLR[4];
+	__m128i z;
 
 
-int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
+	for (unsigned int i = 0; i < length; ++i)
+	{
+		tmpLeft = 0;
+		tmpRight = 0;
+		tmpLR[0] = 0;
+		tmpLR[1] = 0;
+		tmpLeft2 = _mm_setzero_pd();
+		tmpRight2 = _mm_setzero_pd();
+		__m256d ymmSrcLR = _mm256_setzero_pd();
+		__m256d ymmCoeff;
+		__m256d ymmOutLR = _mm256_setzero_pd();
+		x = _mm_setzero_pd();
+		y = _mm_setzero_pd();
+
+		short* srcPtr = src + 2;
+		long long* coeffPtr = coeff + half_size - x8pos + 8;
+		double* coeff2Ptr = coeff2 + half_size - x8pos + 8;
+
+		for (int j = 1; (j * 8 - x8pos) <= half_size; ++j)
+		{
+			srcLR[0] = (long long)*srcPtr;
+			srcLR[1] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLR[0] * *coeffPtr;
+			tmpLR[1] += srcLR[1] * *coeffPtr;
+
+			ymmSrcLR = _mm256_cvtepi32_pd(_mm_loadl_epi64((__m128i*)srcLR)); // d64 d64 d64 d64 <- i32 i32 i32 i32 
+			ymmCoeff = _mm256_broadcast_sd(coeff2Ptr);
+			ymmOutLR = _mm256_fmadd_pd(ymmSrcLR, ymmCoeff, ymmOutLR);
+
+			srcPtr += 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+		}
+
+		srcPtr = src;
+		coeffPtr = coeff + half_size + x8pos;
+		coeff2Ptr = coeff2 + half_size + x8pos;
+
+		for (int j = 0; (j * 8 + x8pos) <= half_size; ++j)
+		{
+			long long srcLeft = (long long)*srcPtr;
+			long long srcRight = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft * *coeffPtr;
+			tmpLR[1] += srcRight * *coeffPtr;
+
+			ymmSrcLR = _mm256_cvtepi32_pd(_mm_loadl_epi64((__m128i*)srcLR)); // d64 d64 d64 d64 <- i32 i32 i32 i32 
+			ymmCoeff = _mm256_broadcast_sd(coeff2Ptr);
+			ymmOutLR = _mm256_fmadd_pd(ymmSrcLR, ymmCoeff, ymmOutLR);
+
+			srcPtr -= 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+		}
+
+		z = _mm256_cvtpd_epi32(ymmOutLR);
+		tmpLR[0] += z.m128i_i32[0];
+		tmpLR[1] += z.m128i_i32[1];
+
+		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
+
+		src += 2;
+		dest += 8 * 2;
+	}
+	return 0;
+}
+
+
+__inline int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
 {
 	int half_size = (tapNum - 1) / 2;
 
@@ -210,7 +291,7 @@ int  oversample(short* src, unsigned int length, long long* coeff, double* coeff
 	}
 	else
 	{
-		do_oversample(src,  length, coeff, coeff2, tapNum, dest, option);
+		do_oversampleAVX(src,  length, coeff, coeff2, tapNum, dest, option);
 	}
 	return 0;
 }
