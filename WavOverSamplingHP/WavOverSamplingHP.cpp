@@ -97,6 +97,30 @@ static void writeRaw32bitPCM(long long left, long long right, int* buffer)
 	buffer[1] = (int)right;
 }
 
+static void writeRaw32bitPCM_AVX(long long left, long long right, int* buffer)
+{
+	int shift = SCALE_SHIFT;
+
+	int add = 1 >> (shift - 1);
+	if (left >= 0) left += add;
+	else left -= add;
+	if (right >= 0) right += add;
+	else right -= add;
+
+	if (left >= 4611686018427387904) left = 4611686018427387904 - 1; // over 63bit : limitted to under [1 << 62]   62bit + 1bit
+	if (right >= 4611686018427387904) right = 4611686018427387904 - 1;
+
+	if (left < -4611686018427387904) left = -4611686018427387904;
+	if (right < -4611686018427387904) right = -4611686018427387904;
+
+
+	left = left >> shift;
+	right = right >> shift;
+
+	buffer[0] = (int)left;
+	buffer[1] = (int)right;
+}
+
 int do_oversampleAVX(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
 {
 	int half_size = (tapNum - 1) / 2;
@@ -109,6 +133,7 @@ int do_oversampleAVX(short* src, unsigned int length, long long* coeff, double* 
 	__declspec(align(32)) long long tmpLR[4];
 	__declspec(align(32)) long long srcLR[4];
 	__m128i z;
+	__m256i d = _mm256_setzero_si256();
 
 
 	for (unsigned int i = 0; i < length; ++i)
@@ -137,7 +162,11 @@ int do_oversampleAVX(short* src, unsigned int length, long long* coeff, double* 
 			tmpLR[0] += srcLR[0] * *coeffPtr;
 			tmpLR[1] += srcLR[1] * *coeffPtr;
 
-			ymmSrcLR = _mm256_cvtepi32_pd(_mm_loadl_epi64((__m128i*)srcLR)); // d64 d64 d64 d64 <- i32 i32 i32 i32 
+			int srcLR2[2];
+			srcLR[0] = (int)*srcPtr;
+			srcLR[1] = (int)*(srcPtr + 1);
+
+			ymmSrcLR = _mm256_cvtepi32_pd(_mm_loadl_epi64((__m128i*)srcLR2)); // d64 d64 d64 d64 <- i32 i32 i32 i32 
 			ymmCoeff = _mm256_broadcast_sd(coeff2Ptr);
 			ymmOutLR = _mm256_fmadd_pd(ymmSrcLR, ymmCoeff, ymmOutLR);
 
@@ -158,7 +187,11 @@ int do_oversampleAVX(short* src, unsigned int length, long long* coeff, double* 
 			tmpLR[0] += srcLeft * *coeffPtr;
 			tmpLR[1] += srcRight * *coeffPtr;
 
-			ymmSrcLR = _mm256_cvtepi32_pd(_mm_loadl_epi64((__m128i*)srcLR)); // d64 d64 d64 d64 <- i32 i32 i32 i32 
+			int srcLR2[2];
+			srcLR[0] = (int)*srcPtr;
+			srcLR[1] = (int)*(srcPtr + 1);
+
+			ymmSrcLR = _mm256_cvtepi32_pd(_mm_loadl_epi64((__m128i*)srcLR2)); // d64 d64 d64 d64 <- i32 i32 i32 i32 
 			ymmCoeff = _mm256_broadcast_sd(coeff2Ptr);
 			ymmOutLR = _mm256_fmadd_pd(ymmSrcLR, ymmCoeff, ymmOutLR);
 
@@ -167,11 +200,16 @@ int do_oversampleAVX(short* src, unsigned int length, long long* coeff, double* 
 			coeff2Ptr += 8;
 		}
 
-		z = _mm256_cvtpd_epi32(ymmOutLR);
-		tmpLR[0] += z.m128i_i32[0];
-		tmpLR[1] += z.m128i_i32[1];
+		d = _mm256_castsi128_si256(_mm256_cvtpd_epi32(ymmOutLR)); // * * * * * * R L
+		__m256i d2 = _mm256_setzero_si256();
+		d = _mm256_unpacklo_epi32(d, d2); // * * * * * 0 R 0 L 
+		d2 = _mm256_castsi128_si256(_mm_load_si128((__m128i*)tmpLR)); // * * * * R R L L
+		d = _mm256_add_epi64(d, d2);
 
-		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
+		//tmpLR[0] += z.m128i_i32[0];
+		//tmpLR[1] += z.m128i_i32[1];
+
+		writeRaw32bitPCM(d.m256i_i64[0], d.m256i_i64[1], dest + x8pos * 2);
 
 		src += 2;
 		dest += 8 * 2;
