@@ -108,6 +108,9 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 	__m128d x, y;
 	__declspec(align(32)) long long tmpLR[4];
 
+	__declspec(align(32)) long long srcLeft[4];
+	__declspec(align(32)) long long srcRight[4];
+
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
@@ -125,17 +128,17 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 		long long* coeffPtr = coeff + half_size - x8pos + 8;
 		double* coeff2Ptr = coeff2 + half_size - x8pos + 8;
 
-		for (int j = 1; (j * 8 - x8pos) <= half_size; ++j)
+		for (int j = 1; j * 8 <= half_size; j += 4)
 		{
-			long long srcLeft = (long long)*srcPtr;
-			long long srcRight = (long long)*(srcPtr + 1);
-			
-			tmpLR[0] += srcLeft * *coeffPtr;
-			tmpLR[1] += srcRight * *coeffPtr;
+			srcLeft[0] = (long long)*srcPtr;
+			srcRight[0] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[0] * *coeffPtr;
+			tmpLR[1] += srcRight[0] * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight);
+			x = _mm_cvtsi64_sd(x, srcLeft[0]); // load "long long" integer (src) and store as double    xxxx 64d  <- int64    SSE2
+			y = _mm_cvtsi64_sd(y, srcRight[0]);
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
@@ -145,23 +148,89 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			srcPtr += 2;
 			coeffPtr += 8;
 			coeff2Ptr += 8;
+
+			///////////////////////////
+
+			srcLeft[1] = (long long)*srcPtr;
+			srcRight[1] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[1] * *coeffPtr;
+			tmpLR[1] += srcRight[1] * *coeffPtr;
+
+			#if defined(HIGH_PRECISION)
+			x = _mm_cvtsi64_sd(x, srcLeft[1]); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight[1]);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			#endif
+
+			srcPtr += 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+
+			////////////////////////
+			srcLeft[2] = (long long)*srcPtr;
+			srcRight[2] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[2] * *coeffPtr;
+			tmpLR[1] += srcRight[2] * *coeffPtr;
+
+			#if defined(HIGH_PRECISION)
+			x = _mm_cvtsi64_sd(x, srcLeft[2]); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight[2]);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			#endif
+
+			srcPtr += 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+
+
+			//////////////////////
+			srcLeft[3] = (long long)*srcPtr;
+			srcRight[3] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[3] * *coeffPtr;
+			tmpLR[1] += srcRight[3] * *coeffPtr;
+
+			#if defined(HIGH_PRECISION)
+			x = _mm_cvtsi64_sd(x, srcLeft[3]); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight[3]);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			#endif
+
+			srcPtr += 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+
+
 		}
 
 		srcPtr = src;
 		coeffPtr = coeff + half_size + x8pos;
 		coeff2Ptr = coeff2 + half_size + x8pos;
 
-		for (int j = 0; (j * 8 + x8pos) <= half_size; ++j)
+		for (int j = 0; j * 8 <= half_size; j += 4)
 		{
-			long long srcLeft = (long long)*srcPtr;
-			long long srcRight = (long long)*(srcPtr + 1);
+			////////////////////////
+			// 0
+			srcLeft[0] = (long long)*srcPtr;
+			srcRight[0] = (long long)*(srcPtr + 1);
 
-			tmpLR[0] += srcLeft * *coeffPtr;
-			tmpLR[1] += srcRight * *coeffPtr;
+			tmpLR[0] += srcLeft[0] * *coeffPtr;
+			tmpLR[1] += srcRight[0] * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight);
+			x = _mm_cvtsi64_sd(x, srcLeft[0]); // load "long long" integer (src) and store as double // SSE2
+			y = _mm_cvtsi64_sd(y, srcRight[0]);
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
@@ -171,6 +240,70 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			srcPtr -= 2;
 			coeffPtr += 8;
 			coeff2Ptr += 8;
+
+			////////////////////////
+			// 1
+			srcLeft[1] = (long long)*srcPtr;
+			srcRight[1] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[1] * *coeffPtr;
+			tmpLR[1] += srcRight[1] * *coeffPtr;
+
+			#if defined(HIGH_PRECISION)
+			x = _mm_cvtsi64_sd(x, srcLeft[1]); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight[1]);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			#endif
+
+			srcPtr -= 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+
+			//////////////////////////
+			// 2
+			srcLeft[2] = (long long)*srcPtr;
+			srcRight[2] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[2] * *coeffPtr;
+			tmpLR[1] += srcRight[2] * *coeffPtr;
+
+			#if defined(HIGH_PRECISION)
+			x = _mm_cvtsi64_sd(x, srcLeft[2]); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight[2]);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			#endif
+
+			srcPtr -= 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+
+			///////////////////////
+			//3
+			srcLeft[3] = (long long)*srcPtr;
+			srcRight[3] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[3] * *coeffPtr;
+			tmpLR[1] += srcRight[3] * *coeffPtr;
+
+			#if defined(HIGH_PRECISION)
+			x = _mm_cvtsi64_sd(x, srcLeft[3]); // load "long long" integer (src) and store as double
+			y = _mm_cvtsi64_sd(y, srcRight[3]);
+			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
+			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
+			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
+			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			#endif
+
+			srcPtr -= 2;
+			coeffPtr += 8;
+			coeff2Ptr += 8;
+
 		}
 
 		#if defined(HIGH_PRECISION)
@@ -178,7 +311,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 		tmpLR[1] += _mm_cvtsd_si64(tmpRight2);
 		#endif
 
-		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos*2);
+		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
 
 		src += 2;
 		dest += 8 * 2;
