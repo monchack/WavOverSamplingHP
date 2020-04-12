@@ -9,8 +9,8 @@
 
 // Tap size; change this number if necessary. Must be an odd number
 //#define TAP_SIZE 4095
-#define TAP_SIZE 524287
-//#define TAP_SIZE 65535
+//#define TAP_SIZE 524287
+#define TAP_SIZE 65535
 
 #define HIGH_PRECISION 1
 
@@ -444,12 +444,18 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	HANDLE fileOut = CreateFileW(destFileName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	writePCM352_32_header(fileOut, wavDataSize * 8 * 2);
 
-	void* memFirCoeff1 = ::GlobalAlloc(GPTR, sizeof(long long) * TAP_SIZE + 1024);
+	void* memFirCoeff1 = ::GlobalAlloc(GPTR, sizeof(long long) * TAP_SIZE + 4096);
 	long long* firCoeff = (long long* )getAlignedMemory(memFirCoeff1);
-	void* memFirCoeff2 = ::GlobalAlloc(GPTR, sizeof(double) * TAP_SIZE + 1024);
+	void* memFirCoeff2 = ::GlobalAlloc(GPTR, sizeof(double) * TAP_SIZE + 4096);
 	double* firCoeff2 = (double*)getAlignedMemory(memFirCoeff2);
 
 	createHannCoeff(TAP_SIZE, firCoeff, firCoeff2);
+	for (int i = 0; i < 256; ++i)
+	{
+		firCoeff[TAP_SIZE + i] = 0;
+		firCoeff2[TAP_SIZE + i] = 0;
+	}
+
 	elapsedTime = GetTickCount64() - startTime;
 	calcStartTime = GetTickCount64();
 	std::cout << "WavOverSampling: Initialization finished:  " << (elapsedTime / 1000) << "." << (elapsedTime % 1000) << " sec  \n";
