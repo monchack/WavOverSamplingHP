@@ -142,7 +142,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr += 2;
@@ -163,7 +163,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr += 2;
@@ -183,7 +183,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr += 2;
@@ -204,7 +204,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr += 2;
@@ -234,7 +234,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr -= 2;
@@ -255,7 +255,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr -= 2;
@@ -276,7 +276,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr -= 2;
@@ -297,7 +297,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
 			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
 			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpLeft2, y);
+			tmpRight2 = _mm_add_sd(tmpRight2, y);
 			#endif
 
 			srcPtr -= 2;
