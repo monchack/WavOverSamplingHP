@@ -540,8 +540,8 @@ static int writePCM352_32_header(HANDLE fileHandle, unsigned long dataSize)
 void* getAlignedMemory(void* mem)
 {
 	long long n = (long long)mem;
-	n = n % 16;
-	if (n != 0) n = 16 - n;
+	n = n % 32;
+	if (n != 0) n = 32 - n;
 	return (void*)((unsigned char*)mem + n);
 }
 
