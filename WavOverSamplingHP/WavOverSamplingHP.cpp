@@ -24,6 +24,21 @@
 using namespace boost::multiprecision;
 using boost::math::constants::pi;
 
+long long* arrayedNormalCoeff[8];
+double* arrayedDiffCoeff[8];
+
+void setCoeff(int tapNum, long long* coeff1, double* coeff2)
+{
+	int coeffNum = (tapNum + 1) / 2;
+	for (int i = 0; i < coeffNum; ++i)
+	{
+		int x = i % 8;
+		int y = i / 8;
+		arrayedNormalCoeff[x][y] = coeff1[coeffNum - 1 + i];
+		arrayedDiffCoeff[x][y] = coeff2[coeffNum - 1 + i];
+	}
+}
+
 void createHannCoeff(int tapNum, long long* dest, double* dest2)
 {
 	int coeffNum = (tapNum + 1) / 2;
@@ -125,8 +140,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 		y = _mm_setzero_pd();
 
 		short* srcPtr = src + 2;
-		long long* coeffPtr = coeff + half_size - x8pos + 8;
-		double* coeff2Ptr = coeff2 + half_size - x8pos + 8;
+		long long* coeffPtr = arrayedNormalCoeff[8-x8pos]; //coeff + half_size - x8pos + 8;
+		double* coeff2Ptr = arrayedDiffCoeff[8-x8pos];// coeff2 + half_size - x8pos + 8;
 
 		for (int j = 1; j * 8 <= half_size; j += 4)
 		{
@@ -146,8 +161,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr += 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 			///////////////////////////
 
@@ -167,8 +182,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr += 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 			////////////////////////
 			srcLeft[2] = (long long)*srcPtr;
@@ -187,8 +202,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr += 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 
 			//////////////////////
@@ -208,15 +223,15 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr += 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 
 		}
 
 		srcPtr = src;
-		coeffPtr = coeff + half_size + x8pos;
-		coeff2Ptr = coeff2 + half_size + x8pos;
+		coeffPtr = arrayedNormalCoeff[x8pos]; //coeff + half_size + x8pos;
+		coeff2Ptr = arrayedDiffCoeff[x8pos];//coeff2 + half_size + x8pos;
 
 		for (int j = 0; j * 8 <= half_size; j += 4)
 		{
@@ -238,8 +253,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr -= 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 			////////////////////////
 			// 1
@@ -259,8 +274,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr -= 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 			//////////////////////////
 			// 2
@@ -280,8 +295,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr -= 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 			///////////////////////
 			//3
@@ -301,8 +316,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			#endif
 
 			srcPtr -= 2;
-			coeffPtr += 8;
-			coeff2Ptr += 8;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
 
 		}
 
@@ -318,6 +333,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 	}
 	return 0;
 }
+
 
 int  oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, unsigned int option)
 {
@@ -589,6 +605,15 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		firCoeff2[TAP_SIZE + i] = 0;
 	}
 
+	//
+	for (int i = 0; i < 8; ++i)
+	{
+		int coeffNum = (TAP_SIZE + 1) / 2;
+		arrayedNormalCoeff[i] = (long long*) _mm_malloc(coeffNum * sizeof(long long), 32);
+		arrayedDiffCoeff[i] = (double*)_mm_malloc(coeffNum * sizeof(double), 32);
+	}
+	setCoeff(TAP_SIZE, firCoeff, firCoeff2);
+
 	elapsedTime = GetTickCount64() - startTime;
 	calcStartTime = GetTickCount64();
 	std::cout << "WavOverSampling: Initialization finished:  " << (elapsedTime / 1000) << "." << (elapsedTime % 1000) << " sec  \n";
@@ -639,6 +664,12 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 
 	::FlushFileBuffers(fileOut);
 	::CloseHandle(fileOut);
+
+	for (int i = 0; i < 8; ++i)
+	{
+		_mm_free(arrayedNormalCoeff[i]);
+		_mm_free(arrayedDiffCoeff[i]);
+	}
 
 	::GlobalFree(memWorkBuffer);
 	::GlobalFree(memOriginalOutBufer);
