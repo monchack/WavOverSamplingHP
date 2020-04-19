@@ -7,6 +7,10 @@
 // reomve comment out below to use Boost
 #include <boost/multiprecision/cpp_dec_float.hpp>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 // Tap size; change this number if necessary. Must be an odd number
 //#define TAP_SIZE 4095
 //#define TAP_SIZE 524287
@@ -118,13 +122,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 {
 	int half_size = (tapNum - 1) / 2;
 
-	long long tmpLeft, tmpRight;
 
-	__m128d tmpLeft2;
-	__m128d tmpRight2;
-	__m128d x, y;
 	__declspec(align(32)) long long tmpLR[4];
-
 	__declspec(align(32)) long long srcLeft[4];
 	__declspec(align(32)) long long srcRight[4];
 
@@ -135,18 +134,11 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
-		tmpLeft = 0;
-		tmpRight = 0;
 		tmpLR[0] = 0;
 		tmpLR[1] = 0;
-		tmpLeft2 = _mm_setzero_pd();
-		tmpRight2 = _mm_setzero_pd();
 
 		tmp256Left2 = _mm256_setzero_pd();
 		tmp256Right2 = _mm256_setzero_pd();
-
-		x = _mm_setzero_pd();
-		y = _mm_setzero_pd();
 
 		short* srcPtr = src + 2;
 		long long* coeffPtr = arrayedNormalCoeff[8 - x8pos]; //coeff + half_size - x8pos + 8;
@@ -161,19 +153,19 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[1] += srcRight[0] * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
+			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
 			__m128i mSrcV = _mm_loadu_si128((__m128i*)srcPtr); // RL RL RL RL   16 16 16 16 16 16 16 16
 			__m128i mSrcU = _mm_srli_si128(mSrcV, 4);          //    RL RL RL
 			__m128i mSrcX = _mm_unpacklo_epi16(mSrcV, mSrcU); //  lower RR LL
 			mSrcV = _mm_srli_si128(mSrcV, 8);  //  RL RL
 			mSrcU = _mm_srli_si128(mSrcV, 4);  //     RL
-			__m128i mSrcY = _mm_unpacklo_epi16(mSrcV, mSrcU); // higher RR LL
-			__m128i mSrcLLLL = _mm_unpacklo_epi32(mSrcX, mSrcY); //RR RR LL LL
+			__m128i mSrcY = _mm_unpacklo_epi16(mSrcV, mSrcU); // upper RR LL
+			__m128i mSrcLLLL = _mm_unpacklo_epi32(mSrcX, mSrcY); // RR RR LL LL
 			__m128i mSrcRRRR = _mm_srli_si128(mSrcLLLL, 8); // RR RR
 			mSrcLLLL = _mm_cvtepi16_epi32(mSrcLLLL); // L32 L32 L32 L32 <- L16 L16 L16 L16
 			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
 			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D
 			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
-			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
 			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2);
 			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
 			#endif
@@ -232,6 +224,7 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[1] += srcRight[0] * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
+			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
 			__m128i mSrcV = _mm_loadu_si128((__m128i*)(srcPtr-6)); // RL RL RL RL   16 16 16 16 16 16 16 16
 			mSrcV = _mm_shuffle_epi32(mSrcV, _MM_SHUFFLE(0,1,2,3)); // from(0), from(1), from(2), from(3)      3:2:1:0
 			__m128i mSrcU = _mm_srli_si128(mSrcV, 4);          //    RL RL RL
@@ -245,7 +238,6 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
 			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D
 			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
-			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
 			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2);
 			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
 			#endif
@@ -541,6 +533,26 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	if (argc < 2) return 0;
 	fileName = argv[1];
 	destFileName = argv[2];
+
+	SYSTEM_INFO si;
+	GetNativeSystemInfo(&si);
+	int cpu = GetActiveProcessorCount(0);
+
+	// FMA3 and AVX are requied; Core i3/5/7/9 (Haswell) and later, AMD FX (Piledriver) and later, 
+	int cpuinfo[4];
+	int isFma3Supported = 0;
+	int isAvxSupported = 0;
+	__cpuid(cpuinfo, 1);
+	if (cpuinfo[2] & (1 << 12)) // ECX 
+	{
+		//FMA3 supported
+		isFma3Supported = 1;
+	}
+	if (cpuinfo[2] & (1 << 28)) // ECX 
+	{
+		//AVX supported
+		isAvxSupported = 1;
+	}
 
 	ULONGLONG startTime = GetTickCount64();
 	ULONGLONG elapsedTime, calcStartTime;
