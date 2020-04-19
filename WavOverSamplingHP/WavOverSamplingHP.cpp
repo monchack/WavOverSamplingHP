@@ -88,7 +88,7 @@ void createHannCoeff(int tapNum, long long* dest, double* dest2)
 	::GlobalFree(coeff3);
 }
 
-__inline static void writeRaw32bitPCM(long long left, long long right, int* buffer)
+__inline static int writeRaw32bitPCM(long long left, long long right, int* buffer)
 {
 	int shift = SCALE_SHIFT;
 
@@ -110,6 +110,8 @@ __inline static void writeRaw32bitPCM(long long left, long long right, int* buff
 
 	buffer[0] = (int)left;
 	buffer[1] = (int)right;
+
+	return buffer[0];
 }
 
 __inline int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
@@ -126,6 +128,10 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 	__declspec(align(32)) long long srcLeft[4];
 	__declspec(align(32)) long long srcRight[4];
 
+	__m256d tmp256Left2;
+	__m256d tmp256Right2;
+
+	__m128i mask = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
@@ -136,12 +142,15 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 		tmpLeft2 = _mm_setzero_pd();
 		tmpRight2 = _mm_setzero_pd();
 
+		tmp256Left2 = _mm256_setzero_pd();
+		tmp256Right2 = _mm256_setzero_pd();
+
 		x = _mm_setzero_pd();
 		y = _mm_setzero_pd();
 
 		short* srcPtr = src + 2;
-		long long* coeffPtr = arrayedNormalCoeff[8-x8pos]; //coeff + half_size - x8pos + 8;
-		double* coeff2Ptr = arrayedDiffCoeff[8-x8pos];// coeff2 + half_size - x8pos + 8;
+		long long* coeffPtr = arrayedNormalCoeff[8 - x8pos]; //coeff + half_size - x8pos + 8;
+		double* coeff2Ptr = arrayedDiffCoeff[8 - x8pos];// coeff2 + half_size - x8pos + 8;
 
 		for (int j = 1; j * 8 <= half_size; j += 4)
 		{
@@ -152,12 +161,21 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[1] += srcRight[0] * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[0]); // load "long long" integer (src) and store as double    xxxx 64d  <- int64    SSE2
-			y = _mm_cvtsi64_sd(y, srcRight[0]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
+			__m128i mSrcV = _mm_loadu_si128((__m128i*)srcPtr); // RL RL RL RL   16 16 16 16 16 16 16 16
+			__m128i mSrcU = _mm_srli_si128(mSrcV, 4);          //    RL RL RL
+			__m128i mSrcX = _mm_unpacklo_epi16(mSrcV, mSrcU); //  lower RR LL
+			mSrcV = _mm_srli_si128(mSrcV, 8);  //  RL RL
+			mSrcU = _mm_srli_si128(mSrcV, 4);  //     RL
+			__m128i mSrcY = _mm_unpacklo_epi16(mSrcV, mSrcU); // higher RR LL
+			__m128i mSrcLLLL = _mm_unpacklo_epi32(mSrcX, mSrcY); //RR RR LL LL
+			__m128i mSrcRRRR = _mm_srli_si128(mSrcLLLL, 8); // RR RR
+			mSrcLLLL = _mm_cvtepi16_epi32(mSrcLLLL); // L32 L32 L32 L32 <- L16 L16 L16 L16
+			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
+			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D
+			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
+			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
+			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2);
+			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
 			#endif
 
 			srcPtr += 2;
@@ -172,15 +190,6 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[0] += srcLeft[1] * *coeffPtr;
 			tmpLR[1] += srcRight[1] * *coeffPtr;
 
-			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[1]); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight[1]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
-			#endif
-
 			srcPtr += 2;
 			coeffPtr += 1;
 			coeff2Ptr += 1;
@@ -192,19 +201,9 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[0] += srcLeft[2] * *coeffPtr;
 			tmpLR[1] += srcRight[2] * *coeffPtr;
 
-			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[2]); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight[2]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
-			#endif
-
 			srcPtr += 2;
 			coeffPtr += 1;
 			coeff2Ptr += 1;
-
 
 			//////////////////////
 			srcLeft[3] = (long long)*srcPtr;
@@ -213,20 +212,9 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[0] += srcLeft[3] * *coeffPtr;
 			tmpLR[1] += srcRight[3] * *coeffPtr;
 
-			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[3]); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight[3]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
-			#endif
-
 			srcPtr += 2;
 			coeffPtr += 1;
 			coeff2Ptr += 1;
-
-
 		}
 
 		srcPtr = src;
@@ -244,12 +232,22 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[1] += srcRight[0] * *coeffPtr;
 
 			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[0]); // load "long long" integer (src) and store as double // SSE2
-			y = _mm_cvtsi64_sd(y, srcRight[0]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
+			__m128i mSrcV = _mm_loadu_si128((__m128i*)(srcPtr-6)); // RL RL RL RL   16 16 16 16 16 16 16 16
+			mSrcV = _mm_shuffle_epi32(mSrcV, _MM_SHUFFLE(0,1,2,3)); // from(0), from(1), from(2), from(3)      3:2:1:0
+			__m128i mSrcU = _mm_srli_si128(mSrcV, 4);          //    RL RL RL
+			__m128i mSrcX = _mm_unpacklo_epi16(mSrcV, mSrcU); //  RR LL
+			mSrcV = _mm_srli_si128(mSrcV, 8);  //  RL RL
+			mSrcU = _mm_srli_si128(mSrcV, 4);  //     RL
+			__m128i mSrcY = _mm_unpacklo_epi16(mSrcV, mSrcU); //  RR LL
+			__m128i mSrcLLLL = _mm_unpacklo_epi32(mSrcX, mSrcY); //RR RR LL LL
+			__m128i mSrcRRRR = _mm_srli_si128(mSrcLLLL, 8); // RR RR
+			mSrcLLLL = _mm_cvtepi16_epi32(mSrcLLLL); // L32 L32 L32 L32 <- L16 L16 L16 L16
+			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
+			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D
+			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
+			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
+			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2);
+			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
 			#endif
 
 			srcPtr -= 2;
@@ -264,15 +262,6 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[0] += srcLeft[1] * *coeffPtr;
 			tmpLR[1] += srcRight[1] * *coeffPtr;
 
-			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[1]); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight[1]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
-			#endif
-
 			srcPtr -= 2;
 			coeffPtr += 1;
 			coeff2Ptr += 1;
@@ -284,15 +273,6 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 
 			tmpLR[0] += srcLeft[2] * *coeffPtr;
 			tmpLR[1] += srcRight[2] * *coeffPtr;
-
-			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[2]); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight[2]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
-			#endif
 
 			srcPtr -= 2;
 			coeffPtr += 1;
@@ -306,24 +286,14 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			tmpLR[0] += srcLeft[3] * *coeffPtr;
 			tmpLR[1] += srcRight[3] * *coeffPtr;
 
-			#if defined(HIGH_PRECISION)
-			x = _mm_cvtsi64_sd(x, srcLeft[3]); // load "long long" integer (src) and store as double
-			y = _mm_cvtsi64_sd(y, srcRight[3]);
-			x = _mm_mul_sd(x, _mm_load_sd(coeff2Ptr));
-			y = _mm_mul_sd(y, _mm_load_sd(coeff2Ptr));
-			tmpLeft2 = _mm_add_sd(tmpLeft2, x);
-			tmpRight2 = _mm_add_sd(tmpRight2, y);
-			#endif
-
 			srcPtr -= 2;
 			coeffPtr += 1;
 			coeff2Ptr += 1;
-
 		}
 
 		#if defined(HIGH_PRECISION)
-		tmpLR[0] += _mm_cvtsd_si64(tmpLeft2); // get "long long" from double
-		tmpLR[1] += _mm_cvtsd_si64(tmpRight2);
+		tmpLR[0] += (long long)(tmp256Left2.m256d_f64[0] + tmp256Left2.m256d_f64[1] + tmp256Left2.m256d_f64[2] + tmp256Left2.m256d_f64[3]);
+		tmpLR[1] += (long long)(tmp256Right2.m256d_f64[0] + tmp256Right2.m256d_f64[1] + tmp256Right2.m256d_f64[2] + tmp256Right2.m256d_f64[3]);
 		#endif
 
 		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
@@ -608,9 +578,11 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	//
 	for (int i = 0; i < 8; ++i)
 	{
-		int coeffNum = (TAP_SIZE + 1) / 2;
+		int coeffNum = (TAP_SIZE + 1) / 2 + 256;
 		arrayedNormalCoeff[i] = (long long*) _mm_malloc(coeffNum * sizeof(long long), 32);
 		arrayedDiffCoeff[i] = (double*)_mm_malloc(coeffNum * sizeof(double), 32);
+		SecureZeroMemory(arrayedNormalCoeff[i], coeffNum * sizeof(long long));
+		SecureZeroMemory(arrayedDiffCoeff[i], coeffNum * sizeof(long long));
 	}
 	setCoeff(TAP_SIZE, firCoeff, firCoeff2);
 
