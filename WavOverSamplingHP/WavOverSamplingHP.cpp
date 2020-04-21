@@ -128,15 +128,12 @@ __inline int do_oversample_(short* src, unsigned int length, long long* coeff, d
 {
 	int half_size = (tapNum - 1) / 2;
 
-
 	__declspec(align(32)) long long tmpLR[4];
 	__declspec(align(32)) long long srcLeft[4];
 	__declspec(align(32)) long long srcRight[4];
 
 	__m256d tmp256Left2;
 	__m256d tmp256Right2;
-
-	__m128i mask = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
@@ -307,11 +304,9 @@ __inline int do_oversample_(short* src, unsigned int length, long long* coeff, d
 }
 
 
-
 __inline int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
 {
 	int half_size = (tapNum - 1) / 2;
-
 
 	__declspec(align(32)) long long tmpLR[4];
 	__declspec(align(32)) long long srcLeft[4];
@@ -320,12 +315,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 	__m256d tmp256Left2;
 	__m256d tmp256Right2;
 
-	__m128i mask = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
-
 	for (unsigned int i = 0; i < length; ++i)
 	{
-		
-
 		tmpLR[0] = 0;
 		tmpLR[1] = 0;
 
@@ -552,7 +543,7 @@ unsigned int searchFmtDataChunk(wchar_t* fileName, WAVEFORMATEX* wf, DWORD* offs
 		return 0;
 	}
 
-	if (header[0] != 0X46464952)
+	if (header[0] != 0x46464952)
 	{
 		// not "RIFF"
 		CloseHandle(fileHandle);
@@ -727,7 +718,6 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		GetLogicalProcessorInformation(NULL, &dw);
 		SYSTEM_LOGICAL_PROCESSOR_INFORMATION* logicalProcessorInfoPtr = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION*)::GlobalAlloc(GPTR, dw);
 		GetLogicalProcessorInformation(logicalProcessorInfoPtr, &dw);
-		unsigned int logicalCpu = 0;
 		for (int i = 0; i < dw / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION); ++i)
 		{
 			if (logicalProcessorInfoPtr[i].Relationship == 0)
@@ -756,7 +746,6 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		isAvxSupported = 1;
 	}
 
-
 	ULONGLONG startTime = GetTickCount64();
 	ULONGLONG elapsedTime, calcStartTime;
 
@@ -771,9 +760,7 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	void* mem1 = memWorkBuffer;
 	void* mem2 = (char*)mem1 + DATA_UNIT_SIZE;
 	void* mem3 = (char*)mem2 + DATA_UNIT_SIZE;
-
 	void* memOut = _mm_malloc(DATA_UNIT_SIZE * 8 * 2 + 1024, 32);
-	//void* memOut = getAlignedMemory(memOriginalOutBufer);
 
 	HANDLE fileOut = CreateFileW(destFileName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	writePCM352_32_header(fileOut, wavDataSize * 8 * 2);
@@ -788,7 +775,6 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		firCoeff2[TAP_SIZE + i] = 0;
 	}
 
-	//
 	for (int i = 0; i < 8; ++i)
 	{
 		int coeffNum = (TAP_SIZE + 1) / 2 + 256;
