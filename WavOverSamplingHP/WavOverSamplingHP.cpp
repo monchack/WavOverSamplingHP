@@ -101,7 +101,7 @@ __inline static int writeRaw32bitPCM(long long left, long long right, int* buffe
 {
 	int shift = SCALE_SHIFT;
 
-	int add = 1 >> (shift - 1);
+	int add = 1 << (shift - 1);
 	if (left >= 0) left += add;
 	else left -= add;
 	if (right >= 0) right += add;
@@ -324,6 +324,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 
 	for (unsigned int i = 0; i < length; ++i)
 	{
+		
+
 		tmpLR[0] = 0;
 		tmpLR[1] = 0;
 
