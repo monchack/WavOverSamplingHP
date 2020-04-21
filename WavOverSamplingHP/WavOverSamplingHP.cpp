@@ -1,8 +1,12 @@
 ﻿
 #include <iostream>
+#include <bitset>
 #include <immintrin.h>
 
 #include <Windows.h>
+
+#include <VersionHelpers.h>
+
 
 // reomve comment out below to use Boost
 #include <boost/multiprecision/cpp_dec_float.hpp>
@@ -15,6 +19,7 @@
 //#define TAP_SIZE 4095
 //#define TAP_SIZE 524287
 #define TAP_SIZE 65535
+//#define TAP_SIZE 16383
 
 #define HIGH_PRECISION 1
 
@@ -164,9 +169,9 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			__m128i mSrcRRRR = _mm_srli_si128(mSrcLLLL, 8); // RR RR
 			mSrcLLLL = _mm_cvtepi16_epi32(mSrcLLLL); // L32 L32 L32 L32 <- L16 L16 L16 L16
 			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
-			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D
+			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D // AVX
 			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
-			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2);
+			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2); // FMA
 			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
 			#endif
 
@@ -530,15 +535,39 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	wchar_t* fileName;
 	wchar_t* destFileName;
 
+	if (!IsWindowsVistaOrGreater())
+	{
+		return 0;
+	}
+
 	if (argc < 2) return 0;
 	fileName = argv[1];
 	destFileName = argv[2];
 
 	SYSTEM_INFO si;
 	GetNativeSystemInfo(&si);
-	int cpu = GetActiveProcessorCount(0);
+	int logicalProcessorCount = 0; // only current processor group;
+	int physicalProcessorCount = 0;
+	DWORD dw = 0;
+	if (IsWindowsVistaOrGreater())
+	{
+		GetLogicalProcessorInformation(NULL, &dw);
+		SYSTEM_LOGICAL_PROCESSOR_INFORMATION* logicalProcessorInfoPtr = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION*)::GlobalAlloc(GPTR, dw);
+		GetLogicalProcessorInformation(logicalProcessorInfoPtr, &dw);
+		unsigned int logicalCpu = 0;
+		for (int i = 0; i < dw / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION); ++i)
+		{
+			if (logicalProcessorInfoPtr[i].Relationship == 0)
+			{
+				++physicalProcessorCount;
+				std::bitset<64> a(logicalProcessorInfoPtr[i].ProcessorMask);
+				logicalProcessorCount += a.count();
+			}
+		}
+		::GlobalFree(logicalProcessorInfoPtr);
+	}
 
-	// FMA3 and AVX are requied; Core i3/5/7/9 (Haswell) and later, AMD FX (Piledriver) and later, 
+	// FMA3 and AVX are requied; Core i3/5/7/9 (Haswell) and later, AMD FX (Piledriver) and later
 	int cpuinfo[4];
 	int isFma3Supported = 0;
 	int isAvxSupported = 0;
@@ -553,6 +582,7 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		//AVX supported
 		isAvxSupported = 1;
 	}
+
 
 	ULONGLONG startTime = GetTickCount64();
 	ULONGLONG elapsedTime, calcStartTime;
