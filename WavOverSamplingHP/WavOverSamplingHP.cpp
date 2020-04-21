@@ -123,7 +123,8 @@ __inline static int writeRaw32bitPCM(long long left, long long right, int* buffe
 	return buffer[0];
 }
 
-__inline int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
+
+__inline int do_oversample_(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
 {
 	int half_size = (tapNum - 1) / 2;
 
@@ -171,8 +172,10 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
 			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D // AVX
 			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
-			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2); // FMA
-			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
+			m256SrcLLLL = _mm256_mul_pd(m256SrcLLLL, mDiffCoeff);
+			m256SrcRRRR = _mm256_mul_pd(m256SrcRRRR, mDiffCoeff);
+			tmp256Left2 = _mm256_add_pd(tmp256Left2, m256SrcLLLL);
+			tmp256Right2 = _mm256_add_pd(tmp256Right2, m256SrcRRRR);
 			#endif
 
 			srcPtr += 2;
@@ -230,8 +233,8 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 
 			#if defined(HIGH_PRECISION)
 			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
-			__m128i mSrcV = _mm_loadu_si128((__m128i*)(srcPtr-6)); // RL RL RL RL   16 16 16 16 16 16 16 16
-			mSrcV = _mm_shuffle_epi32(mSrcV, _MM_SHUFFLE(0,1,2,3)); // from(0), from(1), from(2), from(3)      3:2:1:0
+			__m128i mSrcV = _mm_loadu_si128((__m128i*)(srcPtr - 6)); // RL RL RL RL   16 16 16 16 16 16 16 16
+			mSrcV = _mm_shuffle_epi32(mSrcV, _MM_SHUFFLE(0, 1, 2, 3)); // from(0), from(1), from(2), from(3)      3:2:1:0
 			__m128i mSrcU = _mm_srli_si128(mSrcV, 4);          //    RL RL RL
 			__m128i mSrcX = _mm_unpacklo_epi16(mSrcV, mSrcU); //  RR LL
 			mSrcV = _mm_srli_si128(mSrcV, 8);  //  RL RL
@@ -243,8 +246,10 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
 			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D
 			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
-			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2);
-			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
+			m256SrcLLLL = _mm256_mul_pd(m256SrcLLLL, mDiffCoeff);
+			m256SrcRRRR = _mm256_mul_pd(m256SrcRRRR, mDiffCoeff);
+			tmp256Left2 = _mm256_add_pd(tmp256Left2, m256SrcLLLL);
+			tmp256Right2 = _mm256_add_pd(tmp256Right2, m256SrcRRRR);
 			#endif
 
 			srcPtr -= 2;
@@ -292,6 +297,180 @@ __inline int do_oversample(short* src, unsigned int length, long long* coeff, do
 		tmpLR[0] += (long long)(tmp256Left2.m256d_f64[0] + tmp256Left2.m256d_f64[1] + tmp256Left2.m256d_f64[2] + tmp256Left2.m256d_f64[3]);
 		tmpLR[1] += (long long)(tmp256Right2.m256d_f64[0] + tmp256Right2.m256d_f64[1] + tmp256Right2.m256d_f64[2] + tmp256Right2.m256d_f64[3]);
 		#endif
+
+		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
+
+		src += 2;
+		dest += 8 * 2;
+	}
+	return 0;
+}
+
+
+
+__inline int do_oversample(short* src, unsigned int length, long long* coeff, double* coeff2, int tapNum, int* dest, int x8pos)
+{
+	int half_size = (tapNum - 1) / 2;
+
+
+	__declspec(align(32)) long long tmpLR[4];
+	__declspec(align(32)) long long srcLeft[4];
+	__declspec(align(32)) long long srcRight[4];
+
+	__m256d tmp256Left2;
+	__m256d tmp256Right2;
+
+	__m128i mask = _mm_setr_epi8(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+
+	for (unsigned int i = 0; i < length; ++i)
+	{
+		tmpLR[0] = 0;
+		tmpLR[1] = 0;
+
+		tmp256Left2 = _mm256_setzero_pd();
+		tmp256Right2 = _mm256_setzero_pd();
+
+		short* srcPtr = src + 2;
+		long long* coeffPtr = arrayedNormalCoeff[8 - x8pos]; //coeff + half_size - x8pos + 8;
+		double* coeff2Ptr = arrayedDiffCoeff[8 - x8pos];// coeff2 + half_size - x8pos + 8;
+
+		for (int j = 1; j * 8 <= half_size; j += 4)
+		{
+			srcLeft[0] = (long long)*srcPtr;
+			srcRight[0] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[0] * *coeffPtr;
+			tmpLR[1] += srcRight[0] * *coeffPtr;
+
+			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
+			__m128i mSrcV = _mm_loadu_si128((__m128i*)srcPtr); // RL RL RL RL   16 16 16 16 16 16 16 16
+			__m128i mSrcU = _mm_srli_si128(mSrcV, 4);          //    RL RL RL
+			__m128i mSrcX = _mm_unpacklo_epi16(mSrcV, mSrcU); //  lower RR LL
+			mSrcV = _mm_srli_si128(mSrcV, 8);  //  RL RL
+			mSrcU = _mm_srli_si128(mSrcV, 4);  //     RL
+			__m128i mSrcY = _mm_unpacklo_epi16(mSrcV, mSrcU); // upper RR LL
+			__m128i mSrcLLLL = _mm_unpacklo_epi32(mSrcX, mSrcY); // RR RR LL LL
+			__m128i mSrcRRRR = _mm_srli_si128(mSrcLLLL, 8); // RR RR
+			mSrcLLLL = _mm_cvtepi16_epi32(mSrcLLLL); // L32 L32 L32 L32 <- L16 L16 L16 L16
+			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
+			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D // AVX
+			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
+			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2); // FMA
+			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
+
+			srcPtr += 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+
+			///////////////////////////
+
+			srcLeft[1] = (long long)*srcPtr;
+			srcRight[1] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[1] * *coeffPtr;
+			tmpLR[1] += srcRight[1] * *coeffPtr;
+
+			srcPtr += 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+
+			////////////////////////
+			srcLeft[2] = (long long)*srcPtr;
+			srcRight[2] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[2] * *coeffPtr;
+			tmpLR[1] += srcRight[2] * *coeffPtr;
+
+			srcPtr += 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+
+			//////////////////////
+			srcLeft[3] = (long long)*srcPtr;
+			srcRight[3] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[3] * *coeffPtr;
+			tmpLR[1] += srcRight[3] * *coeffPtr;
+
+			srcPtr += 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+		}
+
+		srcPtr = src;
+		coeffPtr = arrayedNormalCoeff[x8pos]; //coeff + half_size + x8pos;
+		coeff2Ptr = arrayedDiffCoeff[x8pos];//coeff2 + half_size + x8pos;
+
+		for (int j = 0; j * 8 <= half_size; j += 4)
+		{
+			////////////////////////
+			// 0
+			srcLeft[0] = (long long)*srcPtr;
+			srcRight[0] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[0] * *coeffPtr;
+			tmpLR[1] += srcRight[0] * *coeffPtr;
+
+			__m256d mDiffCoeff = _mm256_load_pd(coeff2Ptr);
+			__m128i mSrcV = _mm_loadu_si128((__m128i*)(srcPtr-6)); // RL RL RL RL   16 16 16 16 16 16 16 16
+			mSrcV = _mm_shuffle_epi32(mSrcV, _MM_SHUFFLE(0,1,2,3)); // from(0), from(1), from(2), from(3)      3:2:1:0
+			__m128i mSrcU = _mm_srli_si128(mSrcV, 4);          //    RL RL RL
+			__m128i mSrcX = _mm_unpacklo_epi16(mSrcV, mSrcU); //  RR LL
+			mSrcV = _mm_srli_si128(mSrcV, 8);  //  RL RL
+			mSrcU = _mm_srli_si128(mSrcV, 4);  //     RL
+			__m128i mSrcY = _mm_unpacklo_epi16(mSrcV, mSrcU); //  RR LL
+			__m128i mSrcLLLL = _mm_unpacklo_epi32(mSrcX, mSrcY); //RR RR LL LL
+			__m128i mSrcRRRR = _mm_srli_si128(mSrcLLLL, 8); // RR RR
+			mSrcLLLL = _mm_cvtepi16_epi32(mSrcLLLL); // L32 L32 L32 L32 <- L16 L16 L16 L16
+			mSrcRRRR = _mm_cvtepi16_epi32(mSrcRRRR);
+			__m256d m256SrcLLLL = _mm256_cvtepi32_pd(mSrcLLLL); // L64D L64D L64D L64D
+			__m256d m256SrcRRRR = _mm256_cvtepi32_pd(mSrcRRRR);
+			tmp256Left2 = _mm256_fmadd_pd(m256SrcLLLL, mDiffCoeff, tmp256Left2);
+			tmp256Right2 = _mm256_fmadd_pd(m256SrcRRRR, mDiffCoeff, tmp256Right2);
+
+			srcPtr -= 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+
+			////////////////////////
+			// 1
+			srcLeft[1] = (long long)*srcPtr;
+			srcRight[1] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[1] * *coeffPtr;
+			tmpLR[1] += srcRight[1] * *coeffPtr;
+
+			srcPtr -= 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+
+			//////////////////////////
+			// 2
+			srcLeft[2] = (long long)*srcPtr;
+			srcRight[2] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[2] * *coeffPtr;
+			tmpLR[1] += srcRight[2] * *coeffPtr;
+
+			srcPtr -= 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+
+			///////////////////////
+			//3
+			srcLeft[3] = (long long)*srcPtr;
+			srcRight[3] = (long long)*(srcPtr + 1);
+
+			tmpLR[0] += srcLeft[3] * *coeffPtr;
+			tmpLR[1] += srcRight[3] * *coeffPtr;
+
+			srcPtr -= 2;
+			coeffPtr += 1;
+			coeff2Ptr += 1;
+		}
+
+		tmpLR[0] += (long long)(tmp256Left2.m256d_f64[0] + tmp256Left2.m256d_f64[1] + tmp256Left2.m256d_f64[2] + tmp256Left2.m256d_f64[3]);
+		tmpLR[1] += (long long)(tmp256Right2.m256d_f64[0] + tmp256Right2.m256d_f64[1] + tmp256Right2.m256d_f64[2] + tmp256Right2.m256d_f64[3]);
 
 		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
 
@@ -520,14 +699,6 @@ static int writePCM352_32_header(HANDLE fileHandle, unsigned long dataSize)
 	return 0;
 }
 
-void* getAlignedMemory(void* mem)
-{
-	long long n = (long long)mem;
-	n = n % 32;
-	if (n != 0) n = 32 - n;
-	return (void*)((unsigned char*)mem + n);
-}
-
 int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 {
 	DWORD wavDataOffset, wavDataSize, writtenSize, length, readSize = 0;
@@ -594,21 +765,19 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 	int part = wavDataSize / DATA_UNIT_SIZE;
 	if ((wavDataSize %  DATA_UNIT_SIZE) != 0) part += 1;
 
-	void* memWorkBuffer = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 3 + 1024);
-	void* mem1 = getAlignedMemory(memWorkBuffer);
+	void* memWorkBuffer = _mm_malloc(DATA_UNIT_SIZE * 3 + 1024, 32);
+	void* mem1 = memWorkBuffer;
 	void* mem2 = (char*)mem1 + DATA_UNIT_SIZE;
 	void* mem3 = (char*)mem2 + DATA_UNIT_SIZE;
 
-	void* memOriginalOutBufer = ::GlobalAlloc(GPTR, DATA_UNIT_SIZE * 8 * 2 + 1024);
-	void* memOut = getAlignedMemory(memOriginalOutBufer);
+	void* memOut = _mm_malloc(DATA_UNIT_SIZE * 8 * 2 + 1024, 32);
+	//void* memOut = getAlignedMemory(memOriginalOutBufer);
 
 	HANDLE fileOut = CreateFileW(destFileName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	writePCM352_32_header(fileOut, wavDataSize * 8 * 2);
 
-	void* memFirCoeff1 = ::GlobalAlloc(GPTR, sizeof(long long) * TAP_SIZE + 4096);
-	long long* firCoeff = (long long* )getAlignedMemory(memFirCoeff1);
-	void* memFirCoeff2 = ::GlobalAlloc(GPTR, sizeof(double) * TAP_SIZE + 4096);
-	double* firCoeff2 = (double*)getAlignedMemory(memFirCoeff2);
+	long long* firCoeff = (long long* )_mm_malloc(sizeof(long long) * TAP_SIZE + 4096, 32);
+	double* firCoeff2 = (double*)_mm_malloc(sizeof(double) * TAP_SIZE + 4096, 32);
 
 	createHannCoeff(TAP_SIZE, firCoeff, firCoeff2);
 	for (int i = 0; i < 256; ++i)
@@ -685,9 +854,9 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		_mm_free(arrayedDiffCoeff[i]);
 	}
 
-	::GlobalFree(memWorkBuffer);
-	::GlobalFree(memOriginalOutBufer);
-	::GlobalFree(memFirCoeff1);
-	::GlobalFree(memFirCoeff2);
+	_mm_free(memWorkBuffer);
+	_mm_free(memOut);
+	_mm_free(firCoeff);
+	_mm_free(firCoeff2);
 	return 0;
 }
