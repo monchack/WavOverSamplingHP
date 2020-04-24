@@ -100,12 +100,19 @@ void createHannCoeff(int tapNum, long long* dest, double* dest2)
 __inline static int writeRaw32bitPCM(long long left, long long right, int* buffer)
 {
 	int shift = SCALE_SHIFT;
+	int x = -1 << shift;
 
 	int add = 1 << (shift - 1);
 	if (left >= 0) left += add;
-	else left -= add;
+	else
+	{
+		if (left > x) left = 0;
+	}
 	if (right >= 0) right += add;
-	else right -= add;
+	else
+	{
+		if (right > x) right = 0;
+	}
 
 	if (left >= 4611686018427387904) left = 4611686018427387904 - 1; // over 63bit : limitted to under [1 << 62]   62bit + 1bit
 	if (right >= 4611686018427387904) right = 4611686018427387904 - 1;
