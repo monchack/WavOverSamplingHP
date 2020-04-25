@@ -100,7 +100,6 @@ void createHannCoeff(int tapNum, long long* dest, double* dest2)
 __inline static int writeRaw32bitPCM(long long left, long long right, int* buffer)
 {
 	int shift = SCALE_SHIFT;
-	int x = -1 << shift;
 
 	int add = 1 << (shift - 1);
 	left += add;
@@ -290,8 +289,8 @@ __inline int do_oversample_(short* src, unsigned int length, long long* coeff, d
 		}
 
 		#if defined(HIGH_PRECISION)
-		tmpLR[0] += round(tmp256Left2.m256d_f64[0] + tmp256Left2.m256d_f64[1] + tmp256Left2.m256d_f64[2] + tmp256Left2.m256d_f64[3]);
-		tmpLR[1] += round(tmp256Right2.m256d_f64[0] + tmp256Right2.m256d_f64[1] + tmp256Right2.m256d_f64[2] + tmp256Right2.m256d_f64[3]);
+		tmpLR[0] += (long long)(tmp256Left2.m256d_f64[0] + tmp256Left2.m256d_f64[1] + tmp256Left2.m256d_f64[2] + tmp256Left2.m256d_f64[3]);
+		tmpLR[1] += (long long)(tmp256Right2.m256d_f64[0] + tmp256Right2.m256d_f64[1] + tmp256Right2.m256d_f64[2] + tmp256Right2.m256d_f64[3]);
 		#endif
 
 		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
@@ -573,7 +572,7 @@ unsigned int searchFmtDataChunk(wchar_t* fileName, WAVEFORMATEX* wf, DWORD* offs
 		}
 		pos += 8;
 
-		if (header[0] == 0X20746d66)
+		if (header[0] == 0x20746d66)
 		{
 			// "fmt "
 			if (header[1] >= 16)
@@ -596,7 +595,7 @@ unsigned int searchFmtDataChunk(wchar_t* fileName, WAVEFORMATEX* wf, DWORD* offs
 				pos += header[1];
 			}
 		}
-		else if (header[0] == 0X61746164)
+		else if (header[0] == 0x61746164)
 		{
 			// "data"
 			dataFound = true;
@@ -780,7 +779,7 @@ int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
 		arrayedNormalCoeff[i] = (long long*) _mm_malloc(coeffNum * sizeof(long long), 32);
 		arrayedDiffCoeff[i] = (double*)_mm_malloc(coeffNum * sizeof(double), 32);
 		SecureZeroMemory(arrayedNormalCoeff[i], coeffNum * sizeof(long long));
-		SecureZeroMemory(arrayedDiffCoeff[i], coeffNum * sizeof(long long));
+		SecureZeroMemory(arrayedDiffCoeff[i], coeffNum * sizeof(double));
 	}
 	setCoeff(TAP_SIZE, firCoeff, firCoeff2);
 
