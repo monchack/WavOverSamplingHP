@@ -103,16 +103,8 @@ __inline static int writeRaw32bitPCM(long long left, long long right, int* buffe
 	int x = -1 << shift;
 
 	int add = 1 << (shift - 1);
-	if (left >= 0) left += add;
-	else
-	{
-		if (left > x) left = 0;
-	}
-	if (right >= 0) right += add;
-	else
-	{
-		if (right > x) right = 0;
-	}
+	left += add;
+	right += add;
 
 	if (left >= 4611686018427387904) left = 4611686018427387904 - 1; // over 63bit : limitted to under [1 << 62]   62bit + 1bit
 	if (right >= 4611686018427387904) right = 4611686018427387904 - 1;
@@ -298,8 +290,8 @@ __inline int do_oversample_(short* src, unsigned int length, long long* coeff, d
 		}
 
 		#if defined(HIGH_PRECISION)
-		tmpLR[0] += (long long)(tmp256Left2.m256d_f64[0] + tmp256Left2.m256d_f64[1] + tmp256Left2.m256d_f64[2] + tmp256Left2.m256d_f64[3]);
-		tmpLR[1] += (long long)(tmp256Right2.m256d_f64[0] + tmp256Right2.m256d_f64[1] + tmp256Right2.m256d_f64[2] + tmp256Right2.m256d_f64[3]);
+		tmpLR[0] += round(tmp256Left2.m256d_f64[0] + tmp256Left2.m256d_f64[1] + tmp256Left2.m256d_f64[2] + tmp256Left2.m256d_f64[3]);
+		tmpLR[1] += round(tmp256Right2.m256d_f64[0] + tmp256Right2.m256d_f64[1] + tmp256Right2.m256d_f64[2] + tmp256Right2.m256d_f64[3]);
 		#endif
 
 		writeRaw32bitPCM(tmpLR[0], tmpLR[1], dest + x8pos * 2);
